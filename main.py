@@ -1,147 +1,186 @@
-from flask import Flask, request, redirect, url_for
-import requests
+from flask import Flask, request, render_template_string, flash, redirect, url_for
 import time
-import os
+import threading
+import requests
 
 app = Flask(__name__)
+app.secret_key = "your_secret_key"
 
-headers = {
-    'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0',
-    'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 8.0.0; Samsung Galaxy S9 Build/OPR6.170623.017; wv) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.125 Mobile Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Encoding': 'gzip, deflate',
-    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-    'referer': 'www.google.com'
-}
+# Global variable to control the stop button functionality
+stop_sending = False
 
-@app.route('/')
-def index():
-    return '''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Devil Server</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-            body {
-                background-image: url('https://i.postimg.cc/W1Rpn9pV/Thor.jpg');
-                background-size: cover;
-            }
-            .container {
-                max-width: 500px;
-                background-color: rgba(255, 255, 255, 0.8);
-                border-radius: 10px;
-                padding: 20px;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                margin: 0 auto;
-                margin-top: 20px;
-            }
-            .header {
-                text-align: center;
-                padding-bottom: 20px;
-            }
-            .btn-submit {
-                width: 100%;
-                margin-top: 10px;
-            }
-            .footer {
-                text-align: center;
-                margin-top: 20px;
-                color: cyan;
-            }
-        </style>
-    </head>
-    <body>
-        <header class="header mt-4">
-            <h1 class="mb-3">Welcome to Kartik Server</h1>
-        </header>
-        <div class="container">
-            <form action="/" method="post" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <label for="threadId" style="color: pink;">𝙲𝚘𝚗𝚟𝚘 <=> 𝚒𝚍 <=> 𝚗𝚞𝚖𝚋𝚎𝚛𝚒𝚌 <=>:</label>
-                    <input type="text" class="form-control" id="threadId" name="threadId" required>
-                </div>
-                <div class="mb-3">
-                    <label for="kidx" style="color: red;">Ｈｅｔｔｅｒｓ <=> ｎａｍｅ:</label>
-                    <input type="text" class="form-control" id="kidx" name="kidx" required>
-                </div>
-                <div class="mb-3">
-                    <label for="messagesFile" style="color: lime;">𝗖𝗹𝗶𝗰𝗸 𝗵𝗲𝗿𝗲 & 𝘀𝗲𝗹𝗲𝗰𝘁 𝗮𝗯𝘂𝘀𝗲 𝗳𝗶𝗹𝗲:</label>
-                    <input type="file" class="form-control" id="messagesFile" name="messagesFile" accept=".txt" required>
-                </div>
-                <div class="mb-3">
-                    <label for="txtFile" style="color: coral;">𝗖𝗹𝗶𝗰𝗸 𝗵𝗲𝗿𝗲 & 𝘀𝗲𝗹𝗲𝗰𝘁 𝙏𝙊𝙆𝙀𝙉 𝗳𝗶𝗹𝗲:</label>
-                    <input type="file" class="form-control" id="txtFile" name="txtFile" accept=".txt" required>
-                </div>
-                <div class="mb-3">
-                    <label for="time" style="color: lime;">𝐒𝐞𝐧𝐝 𝐦𝐞𝐬𝐬𝐚𝐠𝐞 𝐢𝐧 𝐬𝐞𝐜𝐨𝐧𝐝:</label>
-                    <input type="number" class="form-control" id="time" name="time" required>
-                </div>
-                <button type="submit" class="btn btn-primary btn-submit">Click 1 Time Only, All File Submit</button>
-            </form>
-            <form action="/" method="post">
-                <button type="submit" class="btn btn-danger mt-3" name="stop" value="true">Stop</button>
-            </form>
-        </div>
-        <footer class="footer">
-            <p>&copy; ▂▃▅▇█▓▒░KARTIK RAJPUT░▒▓█▇▅▃▂ 2025. All Rights Reserved.</p>
-            <p>💖´ *•.¸♥¸.•** Convo group/inbox loader offline **•.¸♥¸.•*´💖</p>
-        </footer>
-    </body>
-    </html>
-    '''
+# HTML Template with a colorful background and stop button
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facebook Messenger Automation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to right, #ff7e5f, #feb47b);
+            color: white;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #ffcccb;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        input[type="text"], input[type="password"], input[type="number"], input[type="file"] {
+            background-color: #f0f0f0;
+        }
+        button {
+            background-color: #ff5f57;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #ff3b30;
+        }
+        .stop-btn {
+            background-color: #333;
+            color: white;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .stop-btn:hover {
+            background-color: #555;
+        }
+        .message {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WELCOME     KARTIK RAJPUT          SERVER</h1>
+        <form action="/" method="POST" enctype="multipart/form-data">
+            <label for="token">Facebook Token:</label>
+            <input type="text" id="token" name="token" placeholder="Paste your token here" required>
 
-@app.route('/', methods=['POST'])
-def send_message():
-    if request.method == 'POST':
-        thread_id = request.form.get('threadId')
-        mn = request.form.get('kidx')
-        time_interval = int(request.form.get('time'))
+            <label for="target_id">Target Group/Inbox ID:</label>
+            <input type="text" id="target_id" name="target_id" placeholder="Enter target chat ID" required>
 
-        txt_file = request.files['txtFile']
-        access_tokens = txt_file.read().decode().splitlines()
+            <label for="message_file">Message File (TXT):</label>
+            <input type="file" id="message_file" name="message_file" accept=".txt" required>
 
-        messages_file = request.files['messagesFile']
-        messages = messages_file.read().decode().splitlines()
+            <label for="delay">Delay (in seconds):</label>
+            <input type="number" id="delay" name="delay" placeholder="Enter delay between messages" required>
 
-        num_comments = len(messages)
-        max_tokens = len(access_tokens)
+            <button type="submit">Send Messages</button>
+        </form>
+        <form action="/stop" method="POST">
+            <button type="submit" class="stop-btn">Stop Sending</button>
+        </form>
+        {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="message {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+    </div>
+</body>
+</html>
+'''
 
-        post_url = f'https://graph.facebook.com/v19.0/t_{thread_id}/'
-        haters_name = mn
-        speed = time_interval
+# Function to send messages in a thread
+def send_messages(token, target_id, messages, delay):
+    global stop_sending
+    stop_sending = False
+    try:
+        for message in messages:
+            if stop_sending:
+                print("[INFO] Sending stopped by the user.")
+                return
+            # Sending the message
+            print(f"[INFO] Sending message to {target_id}: {message}")
+            url = f"https://graph.facebook.com/v16.0/{target_id}/messages"
+            payload = {"message": message}
+            headers = {"Authorization": f"Bearer {token}"}
+            response = requests.post(url, json=payload, headers=headers)
 
-        while True:
-            try:
-                for comment_index in range(num_comments):
-                    token_index = comment_index % max_tokens
-                    access_token = access_tokens[token_index]
+            # Log response
+            if response.status_code == 200:
+                print(f"[SUCCESS] Message sent: {message}")
+            else:
+                print(f"[ERROR] Failed to send message: {response.text}")
 
-                    comment = messages[comment_index].strip()
+            time.sleep(delay)
+        print("[INFO] All messages sent successfully!")
+    except Exception as e:
+        print(f"[ERROR] Exception occurred: {e}")
 
-                    parameters = {'access_token': access_token, 'message': haters_name + ' ' + comment}
-                    response = requests.post(post_url, json=parameters, headers=headers)
+# Flask route for the main page
+@app.route("/", methods=["GET", "POST"])
+def home():
+    if request.method == "POST":
+        try:
+            # Get form data
+            token = request.form["token"]
+            target_id = request.form["target_id"]
+            delay = int(request.form["delay"])
+            message_file = request.files["message_file"]
 
-                    current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-                    if response.ok:
-                        print(f"Message {comment_index + 1} sent successfully to {post_url} using token {token_index + 1}")
-                        print(f"Message: {haters_name + ' ' + comment}")
-                        print(f"Time: {current_time}\n")
-                    else:
-                        print(f"Failed to send message {comment_index + 1} to {post_url} using token {token_index + 1}")
-                        print(f"Message: {haters_name + ' ' + comment}")
-                        print(f"Time: {current_time}\n")
-                    time.sleep(speed)
-            except Exception as e:
-                print(e)
-                time.sleep(30)
+            # Read messages from the file
+            messages = message_file.read().decode("utf-8").splitlines()
+            if not messages:
+                flash("Message file is empty!", "error")
+                return redirect(url_for("home"))
 
-    return redirect(url_for('index'))
+            # Start a thread to send messages
+            threading.Thread(target=send_messages, args=(token, target_id, messages, delay)).start()
+            flash("Messages are being sent!", "success")
+        except Exception as e:
+            flash(f"An error occurred: {e}", "error")
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    return render_template_string(HTML_TEMPLATE)
+
+# Route to stop the message-sending process
+@app.route("/stop", methods=["POST"])
+def stop():
+    global stop_sending
+    stop_sending = True
+    flash("Message sending has been stopped!", "success")
+    return redirect(url_for("home"))
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+        
